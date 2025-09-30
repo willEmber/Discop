@@ -1,0 +1,165 @@
+╔════════════════════════════════════════════════════════════════════════╗
+║                   新目录快速启动指南                                      ║
+║           /opt/data/sanli/text_hide/Discop                              ║
+╚════════════════════════════════════════════════════════════════════════╝
+
+您已将项目从旧目录迁移到: /opt/data/sanli/text_hide/Discop
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 步骤 1: 进入项目目录并验证                                               │
+└────────────────────────────────────────────────────────────────────────┘
+
+cd /opt/data/sanli/text_hide/Discop
+bash verify_migration.sh
+
+这会检查:
+  ✓ 所有必需文件是否存在
+  ✓ Cython 模块是否需要重新编译
+  ✓ Python 环境是否正确
+  ✓ 配置是否正确
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 步骤 2: 重新编译 Cython 模块（必需！）                                   │
+└────────────────────────────────────────────────────────────────────────┘
+
+python setup.py build_ext --inplace
+
+这会生成:
+  ✓ stega_cy.cpython-38-x86_64-linux-gnu.so
+  ✓ random_sample_cy.cpython-38-x86_64-linux-gnu.so
+
+⚠ 重要: 旧目录的 .so 文件不能直接复制使用，必须重新编译！
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 步骤 3: 配置服务器（可选）                                               │
+└────────────────────────────────────────────────────────────────────────┘
+
+方案 A: 编辑 api_server.py (第 80-105 行)
+  API_KEY = "jnu@fenglab"  # 启用认证
+  SERVER_PORT = 8002       # 端口
+  RELOAD_STRATEGY = "reset"
+
+方案 B: 使用环境变量
+  export DISCOP_API_KEY="jnu@fenglab"
+  export DISCOP_PORT=8002
+  export DISCOP_HOST="0.0.0.0"
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 步骤 4: 启动服务器                                                       │
+└────────────────────────────────────────────────────────────────────────┘
+
+方案 A: 直接运行
+  python api_server.py
+
+方案 B: 使用 uvicorn
+  uvicorn api_server:app --host 0.0.0.0 --port 8002
+
+应该看到:
+  ======================================================================
+  Discop Steganography API Server
+  ======================================================================
+  Host:            0.0.0.0
+  Port:            8002
+  Device:          cuda:0
+  Reload Strategy: reset
+  Authentication:  Enabled
+  ======================================================================
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 步骤 5: 测试（新终端）                                                   │
+└────────────────────────────────────────────────────────────────────────┘
+
+基础测试 (5 轮):
+  python test_multi_cycle.py
+
+扩展测试 (20 轮):
+  python test_extended_rounds.py
+
+预期结果:
+  ✓ CYCLE 1 PASSED: Message recovered correctly!
+  ✓ CYCLE 2 PASSED: Message recovered correctly!
+  ...
+  Passed: 4/5 或 5/5
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 测试脚本自动配置                                                         │
+└────────────────────────────────────────────────────────────────────────┘
+
+test_multi_cycle.py 和 test_extended_rounds.py 已自动配置:
+
+  API_HOST = "localhost"           # 从环境变量 DISCOP_HOST 读取
+  API_PORT = 8002                  # 从环境变量 DISCOP_PORT 读取
+  API_KEY = "jnu@fenglab"          # 从环境变量 DISCOP_API_KEY 读取
+
+✓ 无需手动修改测试脚本！
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 提高成功率（可选，推荐）                                                  │
+└────────────────────────────────────────────────────────────────────────┘
+
+当前成功率: ~80% (4/5)
+目标成功率: ~95%+ (19/20)
+
+编辑 config.py 第 49 行:
+  # 从
+  text_default_settings = Settings(..., top_p=0.92, ...)
+  # 改为
+  text_default_settings = Settings(..., top_p=0.88, ...)
+
+然后重新编译和测试:
+  python setup.py build_ext --inplace
+  python api_server.py
+  python test_extended_rounds.py
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 快速命令总结                                                             │
+└────────────────────────────────────────────────────────────────────────┘
+
+# 完整流程 (在新目录执行)
+cd /opt/data/sanli/text_hide/Discop
+python setup.py build_ext --inplace
+python api_server.py &
+sleep 2
+python test_multi_cycle.py
+
+# 检查服务器状态
+curl -H "X-API-Key: jnu@fenglab" http://localhost:8002/health
+
+# 停止服务器
+pkill -f api_server
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 故障排查                                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+
+问题 1: ImportError: cannot import name 'reset_global_state'
+原因: Cython 模块未重新编译
+解决:
+  rm -f stega_cy*.so stega_cy.cpp
+  python setup.py build_ext --inplace
+
+问题 2: Connection refused
+原因: 服务器未启动或端口错误
+解决:
+  检查: ps aux | grep api_server
+  检查: netstat -tuln | grep 8002
+  重启: python api_server.py
+
+问题 3: 401 Unauthorized
+原因: API key 不匹配
+解决:
+  服务器端: 检查 api_server.py 中的 API_KEY
+  客户端: 设置 export DISCOP_API_KEY="jnu@fenglab"
+
+问题 4: 测试失败率高 (>20%)
+原因: top_p 设置过高
+解决:
+  编辑 config.py, 将 top_p 从 0.92 改为 0.88
+  重新编译: python setup.py build_ext --inplace
+
+╔════════════════════════════════════════════════════════════════════════╗
+║ 一键启动 (推荐)                                                        ║
+║                                                                         ║
+║   cd /opt/data/sanli/text_hide/Discop                                 ║
+║   python setup.py build_ext --inplace && python api_server.py         ║
+╚════════════════════════════════════════════════════════════════════════╝

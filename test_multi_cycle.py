@@ -7,8 +7,8 @@ import sys
 
 # Configuration - can be overridden by environment variables
 API_HOST = os.getenv("DISCOP_HOST", "localhost")
-API_PORT = int(os.getenv("DISCOP_PORT", "8000"))
-API_KEY = os.getenv("DISCOP_API_KEY", None)
+API_PORT = int(os.getenv("DISCOP_PORT", "8002"))
+API_KEY = os.getenv("DISCOP_API_KEY", "jnu@fenglab")
 
 API_BASE = f"http://{API_HOST}:{API_PORT}"
 

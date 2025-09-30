@@ -23,7 +23,7 @@ I've added a `reset_global_state()` function to `stega_cy.pyx` that resets this 
 The fix requires **rebuilding the Cython extension**:
 
 ```bash
-cd /opt/data/sanli/Discop/src
+# In your project directory (e.g., /opt/data/sanli/text_hide/Discop)
 python setup.py build_ext --inplace
 ```
 
