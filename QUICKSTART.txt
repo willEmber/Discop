@@ -1,0 +1,58 @@
+"""
+Quick Start: Fixed API Server
+==============================
+
+PROBLEM SOLVED: API now handles multiple encode/decode cycles correctly!
+
+CONFIGURATION:
+--------------
+Edit api_server.py to set:
+  • API_KEY = "your-key"  (or None to disable auth)
+  • SERVER_PORT = 8000
+  • SERVER_HOST = "0.0.0.0"
+  • RELOAD_STRATEGY = "reset"
+
+Or use environment variables:
+  export DISCOP_API_KEY="your-key"
+  export DISCOP_PORT=8000
+  export DISCOP_HOST="0.0.0.0"
+  export DISCOP_RELOAD_STRATEGY="reset"
+
+USAGE:
+------
+
+1. Start server:
+   $ python api_server.py
+
+   Or with uvicorn:
+   $ uvicorn api_server:app --host 0.0.0.0 --port 8000
+
+2. Test multiple cycles:
+   $ python test_multi_cycle.py
+
+   Or with custom settings:
+   $ DISCOP_PORT=9000 python test_multi_cycle.py
+
+3. Check health:
+   $ curl http://localhost:8000/health
+
+STRATEGIES:
+-----------
+• reset    (default) - Fast, reliable state clearing ✓
+• reload   - Slow, maximum safety (full model reload)
+• periodic - Balanced (reload every N ops)
+• none     - Original broken behavior
+
+AUTHENTICATION:
+---------------
+If API_KEY is set, include it in requests:
+  curl -H "X-API-Key: your-key" http://localhost:8000/health
+
+MANUAL CONTROLS:
+----------------
+POST /reload - Force full model reload
+POST /reset  - Force state reset
+GET /health  - Check strategy and stats
+
+See API_STATE_FIX.md for detailed documentation.
+"""

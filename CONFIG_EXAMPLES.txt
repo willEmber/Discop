@@ -1,0 +1,99 @@
+"""
+Example Configuration for api_server.py
+========================================
+
+This file shows common configuration scenarios.
+Copy these settings into the CONFIGURATION section of api_server.py.
+
+SCENARIO 1: Development (No Auth, Localhost Only)
+--------------------------------------------------
+API_KEY = None
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 8000
+RELOAD_STRATEGY = "reset"
+
+SCENARIO 2: Production (With Auth, All Interfaces)
+---------------------------------------------------
+API_KEY = "your-strong-secret-key-here-change-me"
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 8000
+RELOAD_STRATEGY = "reset"
+
+SCENARIO 3: High-Security (Max Safety)
+---------------------------------------
+API_KEY = "your-strong-secret-key-here-change-me"
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 8000
+RELOAD_STRATEGY = "reload"  # Full reload for max safety
+
+SCENARIO 4: Custom Port (Behind Proxy)
+---------------------------------------
+API_KEY = "your-strong-secret-key-here-change-me"
+SERVER_HOST = "127.0.0.1"  # Proxy handles external access
+SERVER_PORT = 9000
+RELOAD_STRATEGY = "reset"
+
+SCENARIO 5: Periodic Reload (Balanced)
+---------------------------------------
+API_KEY = "your-strong-secret-key-here-change-me"
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 8000
+RELOAD_STRATEGY = "periodic"
+RELOAD_EVERY_N_OPS = 20  # Reload after every 20 operations
+
+
+CLIENT EXAMPLES:
+================
+
+Python (with requests):
+-----------------------
+import requests
+
+API_KEY = "your-key"  # or None if auth disabled
+headers = {"X-API-Key": API_KEY} if API_KEY else {}
+
+response = requests.post(
+    "http://localhost:8000/encode",
+    json={
+        "message": "Secret message",
+        "context": "Once upon a time"
+    },
+    headers=headers
+)
+print(response.json())
+
+
+cURL (with auth):
+-----------------
+curl -X POST http://localhost:8000/encode \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: your-key" \\
+  -d '{"message": "Secret", "context": "Once upon a time"}'
+
+
+cURL (no auth):
+---------------
+curl -X POST http://localhost:8000/encode \\
+  -H "Content-Type: application/json" \\
+  -d '{"message": "Secret", "context": "Once upon a time"}'
+
+
+JavaScript (fetch):
+-------------------
+const API_KEY = "your-key";  // or null if auth disabled
+
+const response = await fetch("http://localhost:8000/encode", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    ...(API_KEY && { "X-API-Key": API_KEY })
+  },
+  body: JSON.stringify({
+    message: "Secret message",
+    context: "Once upon a time"
+  })
+});
+
+const result = await response.json();
+console.log(result);
+"""

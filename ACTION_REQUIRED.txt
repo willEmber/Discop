@@ -1,0 +1,76 @@
+╔════════════════════════════════════════════════════════════════════════╗
+║                         CRITICAL ACTION REQUIRED                        ║
+╚════════════════════════════════════════════════════════════════════════╝
+
+The fix is ready, but you MUST rebuild the Cython module for it to work.
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ STEP 1: Stop the current server                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+Press Ctrl+C in the terminal running uvicorn
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ STEP 2: Rebuild the Cython extension                                   │
+└────────────────────────────────────────────────────────────────────────┘
+
+Run this command:
+
+    cd /opt/data/sanli/Discop/src
+    python setup.py build_ext --inplace
+
+You should see:
+  - Compiling stega_cy.pyx ...
+  - Compiling random_sample_cy.pyx ...
+  - ✓ Build successful
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ STEP 3: Restart the server                                             │
+└────────────────────────────────────────────────────────────────────────┘
+
+    python api_server.py
+
+Or:
+
+    uvicorn api_server:app --host 0.0.0.0 --port 8002
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ STEP 4: Test the fix                                                   │
+└────────────────────────────────────────────────────────────────────────┘
+
+    python test_multi_cycle.py
+
+Expected result:
+  ✓ CYCLE 1 PASSED: Message recovered correctly!
+  ✓ CYCLE 2 PASSED: Message recovered correctly!
+  ✓ CYCLE 3 PASSED: Message recovered correctly!
+  ✓ CYCLE 4 PASSED: Message recovered correctly!
+  ✓ CYCLE 5 PASSED: Message recovered correctly!
+  ✓ All cycles passed! (5/5)
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ What was fixed?                                                         │
+└────────────────────────────────────────────────────────────────────────┘
+
+• Added reset_global_state() function to stega_cy.pyx
+• This resets the msg_exhausted_flag before each operation
+• Prevents state contamination between encode/decode cycles
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ If rebuild fails                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+Try cleaning first:
+    rm -f stega_cy*.so stega_cy.cpp
+    python setup.py build_ext --inplace
+
+Check for errors in the build output.
+
+╔════════════════════════════════════════════════════════════════════════╗
+║ QUICK COMMAND SEQUENCE:                                                ║
+║                                                                         ║
+║   python setup.py build_ext --inplace                                  ║
+║   python api_server.py                                                 ║
+║   # (in another terminal)                                              ║
+║   python test_multi_cycle.py                                           ║
+╚════════════════════════════════════════════════════════════════════════╝

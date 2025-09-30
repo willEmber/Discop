@@ -1,0 +1,248 @@
+"""FastAPI service exposing Discop text steganography encode/decode endpoints."""
+import copy
+import math
+import os
+import threading
+from typing import Any, Optional
+
+import torch
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, Field
+
+from config import Settings, text_default_settings
+from model import get_model, get_tokenizer
+
+try:
+    from stega_cy import decode_text, encode_text  # type: ignore
+except ImportError as exc:  # pragma: no cover
+    raise RuntimeError("Failed to import stega_cy extension. Build the project first.") from exc
+
+
+app = FastAPI(title="Discop Steganography API", version="0.1.0")
+
+_DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+_BASE_SETTINGS = copy.deepcopy(text_default_settings)
+_BASE_SETTINGS.device = _DEVICE
+
+_MODEL_LOCK = threading.Lock()
+_MODEL = get_model(_BASE_SETTINGS)
+_TOKENIZER = get_tokenizer(_BASE_SETTINGS)
+
+
+API_KEY_HEADER_NAME = "X-API-Key"
+API_KEY_ENV_NAME = "DISCOP_API_KEY"
+_api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
+
+
+class SettingsOverride(BaseModel):
+    algo: Optional[str] = Field(None, description="Algorithm variant to use (Discop, Discop_baseline, sample).")
+    temp: Optional[float] = Field(None, gt=0, description="Softmax temperature.")
+    top_p: Optional[float] = Field(None, gt=0, le=1, description="Nucleus sampling threshold.")
+    length: Optional[int] = Field(None, gt=0, description="Maximum number of tokens to generate.")
+    seed: Optional[int] = Field(None, ge=0, description="PRNG seed used during sampling.")
+
+
+class EncodeRequest(BaseModel):
+    message: str = Field(..., description="Plain text payload that should be hidden.")
+    context: Optional[str] = Field(
+        None,
+        description="Optional priming context for the language model. Uses a neutral default when omitted."
+    )
+    settings: Optional[SettingsOverride] = Field(
+        None,
+        description="Overrides applied on top of the default text settings."
+    )
+
+
+class EncodeResponse(BaseModel):
+    stego_text: str
+    embedded_bits: int
+    payload_bits: int
+    token_count: int
+    embedding_rate: float
+    utilization_rate: float
+    perplexity: float
+    settings: SettingsOverride
+
+
+class DecodeRequest(BaseModel):
+    stego_text: str = Field(..., description="Generated text that potentially carries a hidden payload.")
+    context: str = Field(..., description="Context that was used when encoding the payload.")
+    expected_bits: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Optional bit length of the original payload for trimming the decoded output."
+    )
+    settings: Optional[SettingsOverride] = Field(
+        None,
+        description="Overrides that reproduce the encoder configuration."
+    )
+
+
+class DecodeResponse(BaseModel):
+    recovered_bits: str
+    recovered_text: Optional[str]
+    used_bits: int
+
+
+_DEFAULT_CONTEXT = (
+    "We were both young when I first saw you, I close my eyes and the flashback starts."
+)
+
+
+class UnauthorizedError(HTTPException):
+    def __init__(self, detail: str = "Invalid or missing API key"):
+        super().__init__(status_code=401, detail=detail)
+
+
+def _text_to_bits(text: str) -> str:
+    return "".join(f"{ord(ch):08b}" for ch in text)
+
+
+def _bits_to_text(bits: str) -> str:
+    chars = []
+    for idx in range(0, len(bits), 8):
+        byte = bits[idx:idx + 8]
+        if len(byte) < 8:
+            break
+        chars.append(chr(int(byte, 2)))
+    return "".join(chars)
+
+
+def _suggest_length(bit_len: int, target_rate: float = 3.6, safety_tokens: int = 8) -> int:
+    base = math.ceil(bit_len / max(target_rate, 1e-6))
+    return max(32, base + safety_tokens)
+
+
+def _coerce_seed(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        if len(value) == 0:
+            return 0
+        return int.from_bytes(value, byteorder="big")
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return int(value, 10)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="`settings.seed` must be an integer.") from exc
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="`settings.seed` must be an integer.") from exc
+
+
+def _apply_overrides(settings: Settings, overrides: Optional[SettingsOverride]) -> Settings:
+    if overrides is None:
+        return settings
+    data = overrides.model_dump(exclude_none=True)
+    for key, value in data.items():
+        if key == "seed":
+            setattr(settings, key, _coerce_seed(value))
+        else:
+            setattr(settings, key, value)
+    return settings
+
+
+def _encode_impl(req: EncodeRequest) -> EncodeResponse:
+    message_bits = _text_to_bits(req.message)
+    if not message_bits:
+        raise HTTPException(status_code=400, detail="Message must not be empty.")
+
+    settings = copy.deepcopy(_BASE_SETTINGS)
+    settings.seed = _coerce_seed(settings.seed)
+    _apply_overrides(settings, req.settings)
+
+    if settings.length is None or settings.length <= 0:
+        settings.length = _suggest_length(len(message_bits))
+
+    context = req.context or _DEFAULT_CONTEXT
+
+    with _MODEL_LOCK:
+        output = encode_text(_MODEL, _TOKENIZER, message_bits, context, settings)
+
+        if output.n_bits < len(message_bits):
+            settings.length = max(settings.length + 16, len(message_bits) // 2)
+            output = encode_text(_MODEL, _TOKENIZER, message_bits, context, settings)
+
+    if output.n_bits < len(message_bits):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Failed to embed the entire payload. Consider increasing `settings.length` or reducing the message size."
+            ),
+        )
+
+    response_settings = SettingsOverride(**{
+        "algo": settings.algo,
+        "temp": settings.temp,
+        "top_p": settings.top_p,
+        "length": settings.length,
+        "seed": _coerce_seed(settings.seed),
+    })
+
+    return EncodeResponse(
+        stego_text=output.stego_object,
+        embedded_bits=output.n_bits,
+        payload_bits=len(message_bits),
+        token_count=output.n_tokens,
+        embedding_rate=output.embedding_rate,
+        utilization_rate=output.utilization_rate,
+        perplexity=output.perplexity,
+        settings=response_settings,
+    )
+
+
+def _decode_impl(req: DecodeRequest) -> DecodeResponse:
+    settings = copy.deepcopy(_BASE_SETTINGS)
+    settings.seed = _coerce_seed(settings.seed)
+    _apply_overrides(settings, req.settings)
+
+    token_ids = _TOKENIZER.encode(req.stego_text, add_special_tokens=False)
+    if not token_ids:
+        raise HTTPException(status_code=400, detail="Unable to tokenize stego text. Verify the input content.")
+
+    with _MODEL_LOCK:
+        recovered_bits = decode_text(_MODEL, _TOKENIZER, token_ids, req.context, settings)
+
+    if req.expected_bits is not None:
+        recovered_bits = recovered_bits[: req.expected_bits]
+
+    recovered_text = None
+    if recovered_bits:
+        recovered_text = _bits_to_text(recovered_bits)
+
+    return DecodeResponse(
+        recovered_bits=recovered_bits,
+        recovered_text=recovered_text if recovered_text else None,
+        used_bits=len(recovered_bits),
+    )
+
+
+def _verify_api_key(provided_key: Optional[str] = Depends(_api_key_header)) -> None:
+    expected_key = os.getenv(API_KEY_ENV_NAME)
+    if expected_key is None:
+        return
+    if not provided_key or provided_key != expected_key:
+        raise UnauthorizedError()
+
+
+@app.post("/encode", response_model=EncodeResponse, dependencies=[Depends(_verify_api_key)])
+async def encode(req: EncodeRequest) -> EncodeResponse:
+    return await run_in_threadpool(_encode_impl, req)
+
+
+@app.post("/decode", response_model=DecodeResponse, dependencies=[Depends(_verify_api_key)])
+async def decode(req: DecodeRequest) -> DecodeResponse:
+    return await run_in_threadpool(_decode_impl, req)
+
+
+@app.get("/health", dependencies=[Depends(_verify_api_key)])
+def health() -> dict:
+    return {"status": "ok", "device": str(_DEVICE)}
+
