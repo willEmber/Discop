@@ -41,7 +41,30 @@ class SingleExampleOutput:
 
 
 def set_seed(sd):
+    """Set random seed for both Python random and PyTorch.
+
+    This function ensures deterministic behavior across encode/decode operations
+    by setting seeds for all random number generators used in the pipeline.
+
+    Args:
+        sd: Seed value. Can be int, bytes, or None.
+    """
+    # Handle different seed types
+    if isinstance(sd, bytes):
+        if len(sd) > 0:
+            sd = int.from_bytes(sd, byteorder='big') % (2**31)
+        else:
+            sd = 0
+
+    # Set Python random seed (used in Cython code)
     random.seed(sd)
+
+    # CRITICAL: Set PyTorch seed (used in model inference)
+    if sd is not None:
+        torch.manual_seed(sd)
+        # Set PyTorch seed for all GPUs
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(sd)
 
 
 # The token indices should be filtered out and their corresponding reasons

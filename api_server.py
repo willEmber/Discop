@@ -47,6 +47,11 @@ def _reset_model_state() -> None:
     # Reset Python random state (used by Cython decode)
     random.seed(None)
 
+    # CRITICAL: Reset PyTorch random state (used by model inference)
+    torch.manual_seed(random.randint(0, 2**31 - 1))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(random.randint(0, 2**31 - 1))
+
     # Reset Cython global state if function is available
     if HAS_RESET_FUNCTION:
         reset_global_state()
@@ -77,6 +82,11 @@ def _reload_model() -> None:
 
     # Reset Python random state
     random.seed(None)
+
+    # CRITICAL: Reset PyTorch random state
+    torch.manual_seed(random.randint(0, 2**31 - 1))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(random.randint(0, 2**31 - 1))
 
     # Reset Cython global state if function is available
     if HAS_RESET_FUNCTION:
