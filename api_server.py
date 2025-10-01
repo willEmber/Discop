@@ -10,6 +10,7 @@ from typing import Any, Optional
 import torch
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
@@ -29,6 +30,15 @@ except ImportError as exc:  # pragma: no cover
 
 
 app = FastAPI(title="Discop Steganography API", version="0.1.0")
+
+# Configure CORS to allow frontend cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins - restrict in production!
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers including X-API-Key
+)
 
 _DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 _BASE_SETTINGS = copy.deepcopy(text_default_settings)

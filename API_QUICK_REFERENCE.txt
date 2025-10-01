@@ -1,0 +1,187 @@
+╔════════════════════════════════════════════════════════════════════════╗
+║                    Discop API 快速参考卡片                              ║
+╚════════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 基础配置                                                                │
+└────────────────────────────────────────────────────────────────────────┘
+
+API URL:  http://your-server:8002
+API Key:  在 HTTP Header 中: X-API-Key: your-key
+格式:     JSON
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 编码（隐藏消息）                                                         │
+└────────────────────────────────────────────────────────────────────────┘
+
+POST /encode
+
+请求体:
+{
+  "message": "要隐藏的消息",
+  "settings": {
+    "top_p": 0.88  // 推荐值
+  }
+}
+
+响应:
+{
+  "stego_text": "包含隐藏消息的文本...",
+  "settings": {...},        // 保存！解码时需要
+  "payload_bits": 192,      // 保存！解码时需要
+  "embedding_rate": 3.84
+}
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 解码（提取消息）                                                         │
+└────────────────────────────────────────────────────────────────────────┘
+
+POST /decode
+
+请求体:
+{
+  "stego_text": "隐写文本",
+  "context": "编码时的上下文",  // 必须相同！
+  "settings": {...},           // 必须相同！
+  "expected_bits": 192         // 从编码响应获取
+}
+
+响应:
+{
+  "recovered_text": "恢复的原始消息"
+}
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ Python 最小示例                                                          │
+└────────────────────────────────────────────────────────────────────────┘
+
+import requests
+
+API_URL = "http://localhost:8002"
+API_KEY = "jnu@fenglab"
+headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
+
+# 编码
+encode_resp = requests.post(f"{API_URL}/encode", headers=headers, json={
+    "message": "Secret", "settings": {"top_p": 0.88}
+})
+result = encode_resp.json()
+
+# 解码
+decode_resp = requests.post(f"{API_URL}/decode", headers=headers, json={
+    "stego_text": result["stego_text"],
+    "context": "We were both young when I first saw you, I close my eyes and the flashback starts.",
+    "settings": result["settings"],
+    "expected_bits": result["payload_bits"]
+})
+print(decode_resp.json()["recovered_text"])  # "Secret"
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ JavaScript 最小示例                                                      │
+└────────────────────────────────────────────────────────────────────────┘
+
+const API_URL = "http://localhost:8002";
+const headers = {
+    "Content-Type": "application/json",
+    "X-API-Key": "jnu@fenglab"
+};
+
+// 编码
+const encodeResp = await fetch(`${API_URL}/encode`, {
+    method: "POST",
+    headers: headers,
+    body: JSON.stringify({
+        message: "Secret",
+        settings: { top_p: 0.88 }
+    })
+});
+const result = await encodeResp.json();
+
+// 解码
+const decodeResp = await fetch(`${API_URL}/decode`, {
+    method: "POST",
+    headers: headers,
+    body: JSON.stringify({
+        stego_text: result.stego_text,
+        context: "We were both young when I first saw you, I close my eyes and the flashback starts.",
+        settings: result.settings,
+        expected_bits: result.payload_bits
+    })
+});
+const decoded = await decodeResp.json();
+console.log(decoded.recovered_text);  // "Secret"
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 数据库保存字段                                                           │
+└────────────────────────────────────────────────────────────────────────┘
+
+必须保存:
+  • stego_text       (TEXT)      - 隐写文本
+  • settings         (JSON)      - 编码参数
+  • context          (TEXT)      - 上下文
+  • payload_bits     (INT)       - 比特数
+
+可选保存:
+  • original_message (TEXT)      - 原始消息（加密存储）
+  • embedding_rate   (FLOAT)     - 嵌入率
+  • token_count      (INT)       - Token 数
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 错误处理                                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+
+状态码    说明                    处理方式
+─────────────────────────────────────────────────────────────────────
+200       成功                    正常处理
+400       请求参数错误            检查输入
+401       认证失败                检查 API Key
+422       消息过长/嵌入失败       缩短消息或增加 length
+500       服务器错误              重试或联系管理员
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 性能参考                                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+
+编码速度:     2-4 秒
+解码速度:     2-3 秒
+成功率:       95%+ (使用 top_p=0.88)
+最大消息:     ~200 字符 (length=100)
+嵌入率:       3.5-4.5 bits/token
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 重要提醒                                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+
+✓ 解码时必须使用与编码时相同的 context 和 settings
+✓ 推荐使用 top_p=0.88 提高成功率
+✓ 保存 settings 和 payload_bits 到数据库
+✓ 设置请求超时时间 (建议 30 秒)
+✗ 不要修改 stego_text 的任何字符
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 测试命令                                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+
+# 健康检查
+curl -H "X-API-Key: jnu@fenglab" http://localhost:8002/health
+
+# 测试编码
+curl -X POST http://localhost:8002/encode \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: jnu@fenglab" \
+  -d '{"message": "test"}'
+
+# 运行示例
+python api_client_examples.py
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ 文档链接                                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+
+完整文档:     API_DOCUMENTATION.md
+Python 示例:  api_client_examples.py
+前端集成:     FRONTEND_INTEGRATION_GUIDE.md
+
+╔════════════════════════════════════════════════════════════════════════╗
+║ 快速开始: python api_client_examples.py                                ║
+╚════════════════════════════════════════════════════════════════════════╝
